@@ -7,16 +7,18 @@ However, this project does not explicityly use a standard RL algorithm like Q le
 It relies on basic self-play mechanism where the model is trained by repeatedly playing against itself.
 
 
-**Required Files
+**Install Required Dependencies
 
-    To run this project, ensure you have the  following installed:
+In a virtual environment created using:
+```bash
+    python -m venv reinfocementLearning
+```
+Then change your source to the new virtual environment
+```bash
+    source reinforcementLearning/bin/activate
+```
 
-    1. Python (>=3.6)
-    2. NumPy
-    3. TensorFlow
-    4. PyGame
-
-
-
-** Install dependencies using:
-pip install numpy tensorflow pygame
+To run this project, ensure you have the necessary requirements setup.
+```bash
+    pip install -r requirements.txt
+```
