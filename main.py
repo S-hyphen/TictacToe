@@ -1,37 +1,46 @@
 import numpy as np
 import tensorflow as tf
-from tensorflow.keras import layers, models
 import random
 import pygame
 import sys
 
-# Initialize Pygame
+# Configure TensorFlow to use GPU memory growth
+gpus = tf.config.experimental.list_physical_devices('GPU')
+if gpus:
+    try:
+        for gpu in gpus:
+            tf.config.experimental.set_memory_growth(gpu, True)
+    except RuntimeError as e:
+        print(e)
+
+# Initialize Pygame modules explicitly
 pygame.init()
+pygame.font.init()
+pygame.display.init()
+
 WIDTH, HEIGHT = 600, 700
 screen = pygame.display.set_mode((WIDTH, HEIGHT))
 pygame.display.set_caption("Tic Tac Toe AI Trainer")
 clock = pygame.time.Clock()
 
-# Colors
+# Colors and Constants
 BG_COLOR = (28, 170, 156)
 LINE_COLOR = (23, 145, 135)
 X_COLOR = (84, 84, 84)
 O_COLOR = (242, 235, 211)
+TRAINING_GAMES = 500  # Reduced for initial testing
 
-# Neural Network Model
 def create_model():
-    model = models.Sequential([
-        layers.Input(shape=(10,)),
-        layers.Dense(256, activation='relu'),
-        layers.Dense(128, activation='relu'),
-        layers.Dense(64, activation='relu'),
-        layers.Dense(32, activation='relu'),
-        layers.Dense(9, activation='softmax')
+    model = tf.keras.Sequential([
+        tf.keras.layers.Input(shape=(10,)),
+        tf.keras.layers.Dense(256, activation='relu'),
+        tf.keras.layers.Dense(128, activation='relu'),
+        tf.keras.layers.Dense(64, activation='relu'),
+        tf.keras.layers.Dense(9, activation='softmax')
     ])
     model.compile(optimizer='adam', loss='categorical_crossentropy')
     return model
 
-# Game Logic
 class TicTacToe:
     def __init__(self):
         self.reset()
@@ -64,7 +73,6 @@ class TicTacToe:
             if self.winner:
                 self.game_over = True
 
-# Encoding/Decoding functions
 def encode_state(game):
     encoded = []
     for row in game.board:
@@ -76,127 +84,171 @@ def encode_state(game):
 def decode_move(move):
     return move // 3, move % 3
 
-# Pygame Visualization
 class GameVisualizer:
     def __init__(self, model):
         self.model = model
         self.game = TicTacToe()
         self.training = True
-        self.font = pygame.font.Font(None, 36)
+        try:
+            self.font = pygame.font.Font(None, 36)
+        except:
+            self.font = pygame.font.SysFont('arial', 36)
         
     def draw_board(self):
-        screen.fill(BG_COLOR)
-        # Draw grid lines
-        pygame.draw.line(screen, LINE_COLOR, (200, 100), (200, 500), 15)
-        pygame.draw.line(screen, LINE_COLOR, (400, 100), (400, 500), 15)
-        pygame.draw.line(screen, LINE_COLOR, (0, 300), (600, 300), 15)
-        pygame.draw.line(screen, LINE_COLOR, (0, 500), (600, 500), 15)
-        
-        # Draw moves
-        for row in range(3):
-            for col in range(3):
-                cell = self.game.board[row][col]
-                center = (col*200 + 100, row*200 + 200)
-                if cell == 'X':
-                    pygame.draw.line(screen, X_COLOR, (center[0]-50, center[1]-50), 
-                                   (center[0]+50, center[1]+50), 15)
-                    pygame.draw.line(screen, X_COLOR, (center[0]+50, center[1]-50), 
-                                   (center[0]-50, center[1]+50), 15)
-                elif cell == 'O':
-                    pygame.draw.circle(screen, O_COLOR, center, 60, 15)
-        
-        # Draw status text
-        if self.training:
-            text = self.font.render("Training AI...", True, (255, 255, 255))
-        else:
-            status = f"Human's turn (X)" if self.game.current_player == 'X' else "AI's turn (O)"
-            text = self.font.render(status, True, (255, 255, 255))
-        screen.blit(text, (20, 20))
-        
-        pygame.display.flip()
-    
-    def train_ai(self, games=1000):
-        training_states = []
-        training_moves = []
-        
-        for game_num in range(games):
-            self.game.reset()
-            while not self.game.game_over:
-                for event in pygame.event.get():
-                    if event.type == pygame.QUIT:
-                        pygame.quit()
-                        sys.exit()
-                
-                state = encode_state(self.game)
-                valid_moves = [i for i in range(9) if self.game.board[i//3][i%3] == '_']
-                
-                if random.random() < 0.1:
-                    move = random.choice(valid_moves)
-                else:
-                    pred = self.model.predict(state.reshape(1, -1), verbose=0)[0]
-                    move = np.argmax([pred[i] if i in valid_moves else -np.inf for i in range(9)])
-                
-                training_states.append(state)
-                training_moves.append(move)
-                
-                row, col = decode_move(move)
-                self.game.make_move(row, col)
-                self.draw_board()
-                pygame.time.wait(50)  # Visualize training progress
-                
-            # Update training text
-            text = self.font.render(f"Training Game {game_num+1}/{games}", True, (255, 255, 255))
-            screen.blit(text, (20, 60))
-            pygame.display.flip()
+        try:
+            screen.fill(BG_COLOR)
+            # Draw grid lines
+            pygame.draw.line(screen, LINE_COLOR, (200, 100), (200, 700), 15)
+            pygame.draw.line(screen, LINE_COLOR, (400, 100), (400, 700), 15)
+            pygame.draw.line(screen, LINE_COLOR, (0, 300), (600, 300), 15)
+            pygame.draw.line(screen, LINE_COLOR, (0, 500), (600, 500), 15)
             
-        return np.array(training_states), tf.keras.utils.to_categorical(training_moves, num_classes=9)
-    
-    def human_move(self, pos):
-        x, y = pos
-        col = x // 200
-        row = (y - 100) // 200
-        if 0 <= row < 3 and 0 <= col < 3:
-            return row, col
-        return None
-    
-    def run(self):
-        # Initial training
-        self.training = True
-        X, y = self.train_ai(games=500)
-        self.model.fit(X, y, epochs=10, batch_size=32, verbose=0)
-        self.training = False
-        
-        # Human vs AI game loop
-        self.game.reset()
-        while True:
-            for event in pygame.event.get():
-                if event.type == pygame.QUIT:
-                    pygame.quit()
-                    sys.exit()
+            # Draw moves
+            for row in range(3):
+                for col in range(3):
+                    cell = self.game.board[row][col]
+                    center = (col*200 + 100, row*200 + 200)
+                    if cell == 'X':
+                        pygame.draw.line(screen, X_COLOR, (center[0]-50, center[1]-50), 
+                                      (center[0]+50, center[1]+50), 15)
+                        pygame.draw.line(screen, X_COLOR, (center[0]+50, center[1]-50), 
+                                      (center[0]-50, center[1]+50), 15)
+                    elif cell == 'O':
+                        pygame.draw.circle(screen, O_COLOR, center, 60, 15)
+            
+            # Status text
+            if self.training:
+                text = self.font.render("Training AI...", True, (255, 255, 255))
+            else:
+                status = "Human's turn (X)" if self.game.current_player == 'X' else "AI's turn (O)"
+                text = self.font.render(status, True, (255, 255, 255))
+            screen.blit(text, (20, 20))
+            
+            pygame.display.flip()
+        except pygame.error as e:
+            print(f"Display error: {e}")
+            self.cleanup()
+            sys.exit()
+
+    def train_ai(self):
+        try:
+            training_states = []
+            training_moves = []
+            
+            for game_num in range(TRAINING_GAMES):
+                self.game.reset()
+                game_history = []
                 
-                if not self.game.game_over and not self.training:
-                    if self.game.current_player == 'X':  # Human turn
-                        if event.type == pygame.MOUSEBUTTONDOWN:
-                            pos = pygame.mouse.get_pos()
-                            move = self.human_move(pos)
-                            if move and self.game.board[move[0]][move[1]] == '_':
-                                self.game.make_move(*move)
-                                self.draw_board()
-                    else:  # AI turn
-                        state = encode_state(self.game)
-                        valid_moves = [i for i in range(9) if self.game.board[i//3][i%3] == '_']
+                while not self.game.game_over:
+                    # Process events regularly
+                    for event in pygame.event.get():
+                        if event.type == pygame.QUIT:
+                            self.cleanup()
+                            sys.exit()
+                    
+                    state = encode_state(self.game)
+                    valid_moves = [i for i in range(9) if self.game.board[i//3][i%3] == '_']
+                    
+                    if random.random() < 0.2:
+                        move = random.choice(valid_moves)
+                    else:
                         pred = self.model.predict(state.reshape(1, -1), verbose=0)[0]
                         move = np.argmax([pred[i] if i in valid_moves else -np.inf for i in range(9)])
-                        row, col = decode_move(move)
-                        self.game.make_move(row, col)
+                    
+                    game_history.append((state, move))
+                    row, col = decode_move(move)
+                    self.game.make_move(row, col)
+                    
+                    if game_num % 50 == 0:
                         self.draw_board()
-                        pygame.time.wait(500)
-            
-            self.draw_board()
-            clock.tick(30)
+                        pygame.time.wait(10)
 
-# Main execution
+                # Reward assignment
+                reward = 1 if self.game.winner == 'X' else -1 if self.game.winner == 'O' else 0
+                for idx, (s, m) in enumerate(game_history):
+                    training_states.append(s)
+                    training_moves.append(m if reward >= 0 else random.choice(range(9)))
+
+                if game_num % 100 == 0:
+                    print(f"Training game {game_num}/{TRAINING_GAMES}")
+            
+            return np.array(training_states), tf.keras.utils.to_categorical(training_moves, num_classes=9)
+        except Exception as e:
+            print(f"Training error: {e}")
+            self.cleanup()
+            sys.exit()
+
+    def cleanup(self):
+        pygame.quit()
+        tf.keras.backend.clear_session()
+
+    def run(self):
+        try:
+            # Initial training
+            self.training = True
+            X, y = self.train_ai()
+            self.model.fit(X, y, epochs=10, batch_size=32, verbose=1)
+            self.training = False
+            
+            # Main game loop
+            while True:
+                self.game.reset()
+                game_running = True
+                
+                while game_running:
+                    for event in pygame.event.get():
+                        if event.type == pygame.QUIT:
+                            self.cleanup()
+                            sys.exit()
+                        
+                        if not self.game.game_over:
+                            if self.game.current_player == 'X':
+                                if event.type == pygame.MOUSEBUTTONDOWN:
+                                    pos = pygame.mouse.get_pos()
+                                    col = pos[0] // 200
+                                    row = (pos[1] - 100) // 200
+                                    if 0 <= row < 3 and 0 <= col < 3:
+                                        if self.game.board[row][col] == '_':
+                                            self.game.make_move(row, col)
+                            else:
+                                state = encode_state(self.game)
+                                valid_moves = [i for i in range(9) if self.game.board[i//3][i%3] == '_']
+                                if valid_moves:
+                                    pred = self.model.predict(state.reshape(1, -1), verbose=0)[0]
+                                    move = np.argmax([pred[i] if i in valid_moves else -np.inf for i in range(9)])
+                                    row, col = decode_move(move)
+                                    self.game.make_move(row, col)
+                                    pygame.time.wait(300)
+                    
+                    self.draw_board()
+                    clock.tick(30)
+                    
+                    if self.game.game_over:
+                        # Display result
+                        result_text = "Draw!" if self.game.winner == 'draw' else f"{self.game.winner} wins!"
+                        text = self.font.render(f"{result_text} Click to restart!", True, (255, 255, 255))
+                        screen.blit(text, (WIDTH//2 - 120, HEIGHT - 50))
+                        pygame.display.flip()
+                        
+                        # Wait for click
+                        waiting = True
+                        while waiting:
+                            event = pygame.event.wait()
+                            if event.type == pygame.QUIT:
+                                self.cleanup()
+                                sys.exit()
+                            if event.type == pygame.MOUSEBUTTONDOWN:
+                                waiting = False
+                                game_running = False
+        except Exception as e:
+            print(f"Runtime error: {e}")
+            self.cleanup()
+
 if __name__ == "__main__":
-    model = create_model()
-    visualizer = GameVisualizer(model)
-    visualizer.run()
+    try:
+        model = create_model()
+        visualizer = GameVisualizer(model)
+        visualizer.run()
+    except Exception as e:
+        print(f"Initialization error: {e}")
+        pygame.quit()
