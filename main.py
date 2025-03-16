@@ -1,100 +1,202 @@
 import numpy as np
 import tensorflow as tf
-from tensorflow import keras
-from tensorflow.keras import layers
+from tensorflow.keras import layers, models
 import random
 import pygame
+import sys
 
-# Tic-Tac-Toe Environment
-class TicTacToe:
-    def __init__(self):
-        self.board = np.full((3, 3), '_')
-        self.turn = 'x'
+# Initialize Pygame
+pygame.init()
+WIDTH, HEIGHT = 600, 700
+screen = pygame.display.set_mode((WIDTH, HEIGHT))
+pygame.display.set_caption("Tic Tac Toe AI Trainer")
+clock = pygame.time.Clock()
 
-    def reset(self):
-        self.board = np.full((3, 3), '_')
-        self.turn = 'x'
-        return self.get_state()
-
-    def get_state(self):
-        mapping = {'x': 1, 'o': -1, '_': 0}
-        state = np.vectorize(mapping.get)(self.board).flatten()
-        return np.append(state, 1 if self.turn == 'x' else -1)
-
-    def available_moves(self):
-        return [(r, c) for r in range(3) for c in range(3) if self.board[r, c] == '_']
-
-    def make_move(self, row, col):
-        if self.board[row, col] == '_':
-            self.board[row, col] = self.turn
-            self.turn = 'o' if self.turn == 'x' else 'x'
-            return True
-        return False
-
-    def check_winner(self):
-        for line in np.vstack((self.board, self.board.T, [self.board.diagonal(), np.fliplr(self.board).diagonal()])):
-            if np.all(line == 'x'):
-                return 1
-            elif np.all(line == 'o'):
-                return -1
-        return 0 if '_' not in self.board else None
+# Colors
+BG_COLOR = (28, 170, 156)
+LINE_COLOR = (23, 145, 135)
+X_COLOR = (84, 84, 84)
+O_COLOR = (242, 235, 211)
 
 # Neural Network Model
 def create_model():
-    model = keras.Sequential([
-        layers.Dense(128, activation='relu', input_shape=(10,)),
+    model = models.Sequential([
+        layers.Input(shape=(10,)),
+        layers.Dense(256, activation='relu'),
+        layers.Dense(128, activation='relu'),
         layers.Dense(64, activation='relu'),
         layers.Dense(32, activation='relu'),
-        layers.Dense(2, activation='linear')  # Output: row and column
+        layers.Dense(9, activation='softmax')
     ])
-    model.compile(optimizer='adam', loss='mse')
+    model.compile(optimizer='adam', loss='categorical_crossentropy')
     return model
 
-# Train Model with Self-Play
-def train_model(model, episodes=5000):
-    env = TicTacToe()
-    for _ in range(episodes):
-        env.reset()
-        while True:
-            state = env.get_state().reshape(1, -1)
-            if random.random() < 0.2:  # Exploration
-                move = random.choice(env.available_moves())
-            else:  # Exploitation
-                prediction = model.predict(state, verbose=0)[0]
-                move = (round(prediction[0]), round(prediction[1]))
-                if move not in env.available_moves():
-                    move = random.choice(env.available_moves())
-            env.make_move(*move)
-            winner = env.check_winner()
-            if winner is not None:
-                break
-    return model
+# Game Logic
+class TicTacToe:
+    def __init__(self):
+        self.reset()
+        
+    def reset(self):
+        self.board = np.full((3, 3), '_')
+        self.current_player = 'X'
+        self.game_over = False
+        self.winner = None
+        
+    def check_winner(self):
+        lines = [
+            *self.board,
+            *self.board.T,
+            np.diag(self.board),
+            np.fliplr(self.board).diagonal()
+        ]
+        for line in lines:
+            if len(set(line)) == 1 and line[0] != '_':
+                return line[0]
+        if '_' not in self.board:
+            return 'draw'
+        return None
+    
+    def make_move(self, row, col):
+        if self.board[row][col] == '_' and not self.game_over:
+            self.board[row][col] = self.current_player
+            self.current_player = 'O' if self.current_player == 'X' else 'X'
+            self.winner = self.check_winner()
+            if self.winner:
+                self.game_over = True
 
-# Pygame UI
-def play_with_human(model):
-    pygame.init()
-    screen = pygame.display.set_mode((300, 300))
-    pygame.display.set_caption("Tic-Tac-Toe AI")
-    env = TicTacToe()
-    running = True
-    while running:
-        screen.fill((255, 255, 255))
-        for event in pygame.event.get():
-            if event.type == pygame.QUIT:
-                running = False
-            elif event.type == pygame.MOUSEBUTTONDOWN:
-                x, y = event.pos
-                row, col = y // 100, x // 100
-                if env.make_move(row, col):
-                    state = env.get_state().reshape(1, -1)
-                    prediction = model.predict(state, verbose=0)[0]
-                    move = (round(prediction[0]), round(prediction[1]))
-                    if move in env.available_moves():
-                        env.make_move(*move)
+# Encoding/Decoding functions
+def encode_state(game):
+    encoded = []
+    for row in game.board:
+        for cell in row:
+            encoded.append(1 if cell == 'X' else -1 if cell == 'O' else 0)
+    encoded.append(1 if game.current_player == 'X' else -1)
+    return np.array(encoded)
+
+def decode_move(move):
+    return move // 3, move % 3
+
+# Pygame Visualization
+class GameVisualizer:
+    def __init__(self, model):
+        self.model = model
+        self.game = TicTacToe()
+        self.training = True
+        self.font = pygame.font.Font(None, 36)
+        
+    def draw_board(self):
+        screen.fill(BG_COLOR)
+        # Draw grid lines
+        pygame.draw.line(screen, LINE_COLOR, (200, 100), (200, 500), 15)
+        pygame.draw.line(screen, LINE_COLOR, (400, 100), (400, 500), 15)
+        pygame.draw.line(screen, LINE_COLOR, (0, 300), (600, 300), 15)
+        pygame.draw.line(screen, LINE_COLOR, (0, 500), (600, 500), 15)
+        
+        # Draw moves
+        for row in range(3):
+            for col in range(3):
+                cell = self.game.board[row][col]
+                center = (col*200 + 100, row*200 + 200)
+                if cell == 'X':
+                    pygame.draw.line(screen, X_COLOR, (center[0]-50, center[1]-50), 
+                                   (center[0]+50, center[1]+50), 15)
+                    pygame.draw.line(screen, X_COLOR, (center[0]+50, center[1]-50), 
+                                   (center[0]-50, center[1]+50), 15)
+                elif cell == 'O':
+                    pygame.draw.circle(screen, O_COLOR, center, 60, 15)
+        
+        # Draw status text
+        if self.training:
+            text = self.font.render("Training AI...", True, (255, 255, 255))
+        else:
+            status = f"Human's turn (X)" if self.game.current_player == 'X' else "AI's turn (O)"
+            text = self.font.render(status, True, (255, 255, 255))
+        screen.blit(text, (20, 20))
+        
         pygame.display.flip()
-    pygame.quit()
+    
+    def train_ai(self, games=1000):
+        training_states = []
+        training_moves = []
+        
+        for game_num in range(games):
+            self.game.reset()
+            while not self.game.game_over:
+                for event in pygame.event.get():
+                    if event.type == pygame.QUIT:
+                        pygame.quit()
+                        sys.exit()
+                
+                state = encode_state(self.game)
+                valid_moves = [i for i in range(9) if self.game.board[i//3][i%3] == '_']
+                
+                if random.random() < 0.1:
+                    move = random.choice(valid_moves)
+                else:
+                    pred = self.model.predict(state.reshape(1, -1), verbose=0)[0]
+                    move = np.argmax([pred[i] if i in valid_moves else -np.inf for i in range(9)])
+                
+                training_states.append(state)
+                training_moves.append(move)
+                
+                row, col = decode_move(move)
+                self.game.make_move(row, col)
+                self.draw_board()
+                pygame.time.wait(50)  # Visualize training progress
+                
+            # Update training text
+            text = self.font.render(f"Training Game {game_num+1}/{games}", True, (255, 255, 255))
+            screen.blit(text, (20, 60))
+            pygame.display.flip()
+            
+        return np.array(training_states), tf.keras.utils.to_categorical(training_moves, num_classes=9)
+    
+    def human_move(self, pos):
+        x, y = pos
+        col = x // 200
+        row = (y - 100) // 200
+        if 0 <= row < 3 and 0 <= col < 3:
+            return row, col
+        return None
+    
+    def run(self):
+        # Initial training
+        self.training = True
+        X, y = self.train_ai(games=500)
+        self.model.fit(X, y, epochs=10, batch_size=32, verbose=0)
+        self.training = False
+        
+        # Human vs AI game loop
+        self.game.reset()
+        while True:
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    pygame.quit()
+                    sys.exit()
+                
+                if not self.game.game_over and not self.training:
+                    if self.game.current_player == 'X':  # Human turn
+                        if event.type == pygame.MOUSEBUTTONDOWN:
+                            pos = pygame.mouse.get_pos()
+                            move = self.human_move(pos)
+                            if move and self.game.board[move[0]][move[1]] == '_':
+                                self.game.make_move(*move)
+                                self.draw_board()
+                    else:  # AI turn
+                        state = encode_state(self.game)
+                        valid_moves = [i for i in range(9) if self.game.board[i//3][i%3] == '_']
+                        pred = self.model.predict(state.reshape(1, -1), verbose=0)[0]
+                        move = np.argmax([pred[i] if i in valid_moves else -np.inf for i in range(9)])
+                        row, col = decode_move(move)
+                        self.game.make_move(row, col)
+                        self.draw_board()
+                        pygame.time.wait(500)
+            
+            self.draw_board()
+            clock.tick(30)
 
-# Train and Play
-model = create_model()
-model = train_model(model)
-play_with_human(model)
+# Main execution
+if __name__ == "__main__":
+    model = create_model()
+    visualizer = GameVisualizer(model)
+    visualizer.run()
