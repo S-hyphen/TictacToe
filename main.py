@@ -1,3 +1,4 @@
+import time
 import numpy as np
 import tensorflow as tf
 import random
@@ -17,6 +18,8 @@ EXPLORATION_END = 0.01
 EXPLORATION_DECAY = 0.995
 BATCH_SIZE = 64
 MEMORY_SIZE = 100000
+TRAINING_UPDATE_INTERVAL = 1  # Seconds between console updates
+VISUALIZATION_FREQUENCY = 10  # Update screen every N episodes
 
 # Colors
 BG_COLOR = (28, 170, 156)
@@ -145,25 +148,34 @@ def draw_board(game):
                 pygame.draw.circle(screen, O_COLOR, center, 60, 15)
     
     # Display status
-    if not game.game_over:
-        text = font.render(f"{game.current_player}'s Turn", True, (255, 255, 255))
-        screen.blit(text, (20, 20))
+    status_text = f"{game.current_player}'s Turn" if not game.game_over else \
+                 f"Winner: {game.winner}" if game.winner != 'draw' else "Draw!"
+    text = font.render(status_text, True, (255, 255, 255))
+    screen.blit(text, (20, 20))
+    
     pygame.display.flip()
 
 def train_ai(agent, episodes):
     game = TicTacToe()
+    start_time = time.time()
+    last_update = time.time()
+    total_steps = 0
+    win_count = 0
+    loss_count = 0
+    draw_count = 0
     
+    print("\nTraining Progress:")
+    print("EPISODE |  EXPLORE  |  WINS  | LOSSES | DRAWS | STEPS/s |  EPS TIME  |")
+    print("----------------------------------------------------------------------")
+
     for episode in range(episodes):
         game.reset()
         state = encode_state(game)
         done = False
-        
+        episode_steps = 0
+        episode_start = time.time()
+
         while not done:
-            for event in pygame.event.get():
-                if event.type == pygame.QUIT:
-                    pygame.quit()
-                    sys.exit()
-            
             valid_moves = [i for i in range(9) if game.board[i//3][i%3] == '_']
             action = agent.act(state, valid_moves)
             row, col = decode_move(action)
@@ -181,64 +193,110 @@ def train_ai(agent, episodes):
             elif game.winner == 'draw':
                 reward = 0.5
             else:
-                reward = 0.1  # Small reward for valid moves
+                reward = 0.1
             
             agent.remember(prev_state, action, reward, next_state, done)
             state = next_state
             
             agent.replay()
             
-            if episode % 100 == 0:
+            total_steps += 1
+            episode_steps += 1
+
+            # Update display regularly
+            if episode % VISUALIZATION_FREQUENCY == 0:
                 draw_board(game)
-                pygame.time.wait(10)
-        
-        if episode % 100 == 0:
+                pygame.time.wait(50)
+
+            # Handle events
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    pygame.quit()
+                    sys.exit()
+
+            # Console update
+            current_time = time.time()
+            if current_time - last_update >= TRAINING_UPDATE_INTERVAL:
+                elapsed = current_time - start_time
+                steps_per_sec = total_steps / elapsed if elapsed > 0 else 0
+                eps_time = current_time - episode_start
+                
+                stats = (
+                    f"{episode+1:6} | {agent.exploration_rate:8.4f} | "
+                    f"{win_count:5} | {loss_count:6} | {draw_count:5} | "
+                    f"{steps_per_sec:7.1f} | {eps_time:8.1f}s |"
+                )
+                
+                sys.stdout.write("\r" + stats)
+                sys.stdout.flush()
+                last_update = current_time
+
+        # Update outcome counts
+        if game.winner == 'X':
+            win_count += 1
+        elif game.winner == 'O':
+            loss_count += 1
+        elif game.winner == 'draw':
+            draw_count += 1
+
+        # Episode summary
+        if (episode+1) % 100 == 0:
             agent.update_target_model()
-            print(f"Episode: {episode+1}, Exploration: {agent.exploration_rate:.2f}")
+            elapsed = time.time() - start_time
+            print(f"\nEpisode {episode+1} Summary:")
+            print(f"- Exploration rate: {agent.exploration_rate:.4f}")
+            print(f"- Win/Loss/Draw: {win_count}/{loss_count}/{draw_count}")
+            print(f"- Steps/sec: {total_steps/elapsed:.1f}")
+            print(f"- Elapsed time: {elapsed/60:.1f} minutes")
+            print("----------------------------------------------------------------------")
 
 def human_vs_ai(agent):
     game = TicTacToe()
-    agent.exploration_rate = 0.0  # Disable exploration
+    agent.exploration_rate = 0.0
     
     while True:
+        draw_board(game)
+        
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 pygame.quit()
                 sys.exit()
             
-            if game.game_over:
-                game.reset()
-                continue
-            
-            if game.current_player == 'X':  # Human
-                if event.type == pygame.MOUSEBUTTONDOWN:
+            if event.type == pygame.MOUSEBUTTONDOWN:
+                if game.game_over:
+                    game.reset()
+                    continue
+                
+                if game.current_player == 'X':
                     x, y = pygame.mouse.get_pos()
                     col = x // CELL_SIZE
                     row = y // CELL_SIZE
-                    if game.make_move(row, col):
-                        draw_board(game)
-            
-            else:  # AI
-                state = encode_state(game)
-                valid_moves = [i for i in range(9) if game.board[i//3][i%3] == '_']
-                action = agent.act(state, valid_moves)
-                row, col = decode_move(action)
-                game.make_move(row, col)
-                draw_board(game)
-                pygame.time.wait(500)
-        
-        draw_board(game)
+                    if 0 <= row < 3 and 0 <= col < 3:
+                        if game.make_move(row, col):
+                            draw_board(game)
+                            
+                            if not game.game_over:
+                                # AI's turn
+                                state = encode_state(game)
+                                valid_moves = [i for i in range(9) if game.board[i//3][i%3] == '_']
+                                action = agent.act(state, valid_moves)
+                                row, col = decode_move(action)
+                                game.make_move(row, col)
+                                draw_board(game)
+                                pygame.time.wait(300)
+
         clock.tick(30)
 
 if __name__ == "__main__":
     # Training phase
     agent = DQNAgent()
-    print("Training AI...")
+    print("Initializing AI Training...")
     train_ai(agent, TRAINING_GAMES)
     
     # Save trained model
     agent.model.save('tictactoe_ai.h5')
+    print("\nTraining complete! Saved model as 'tictactoe_ai.h5'")
     
     # Human vs AI
-    print("Starting game vs Human")
+    print("\nStarting Human vs AI game...")
     human_vs_ai(agent)
