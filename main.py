@@ -1,9 +1,20 @@
 import pygame
+from pygame import mixer
 import sys
 import random
 import pickle
 
-# Game constants
+#Constants
+SCREEN_WIDTH = 800
+SCREEN_HEIGHT = 800
+BOARD_POS_X = (1/15)*SCREEN_WIDTH   #boards relative position with screen
+BOARD_POS_Y = (1/15)*SCREEN_HEIGHT
+ITEM_POS_X = (1/10)*SCREEN_WIDTH    #the 1st items position w.r.t. screen
+ITEM_POS_Y = (1/10)*SCREEN_HEIGHT
+ITEM_INC_X = (3/10)*SCREEN_WIDTH    #the relative difference between items
+ITEM_INC_Y = (3/10)*SCREEN_HEIGHT
+delfault_bg = (255, 255, 255)  # default background color
+
 WIDTH, HEIGHT = 600, 600
 CELL_SIZE = WIDTH // 3
 LINE_WIDTH = 15
@@ -14,6 +25,42 @@ WHITE = (255, 255, 255)
 BLACK = (0, 0, 0)
 RED = (255, 0, 0)
 BLUE = (0, 0, 255)
+
+#Functions
+def scale_items(bg1,bg2,bg3,board_image,x_image,x_image_red,o_image,o_image_blue):
+    bg1 = pygame.transform.scale(bg1,(SCREEN_WIDTH, SCREEN_HEIGHT))
+    bg2 = pygame.transform.scale(bg2,(SCREEN_WIDTH, SCREEN_HEIGHT))
+    bg3 = pygame.transform.scale(bg3,(SCREEN_WIDTH, SCREEN_HEIGHT))
+    
+    board_image = pygame.transform.scale(board_image,(SCREEN_WIDTH*(13/15), SCREEN_HEIGHT*(13/15)))
+    x_image = pygame.transform.scale(x_image,(SCREEN_WIDTH*(1/5), SCREEN_HEIGHT*(1/5)))
+    x_image_red = pygame.transform.scale(x_image_red,(SCREEN_WIDTH*(1/5), SCREEN_HEIGHT*(1/5)))
+    o_image = pygame.transform.scale(o_image,(SCREEN_WIDTH*(1/5), SCREEN_HEIGHT*(1/5)))
+    o_image_blue = pygame.transform.scale(o_image_blue,(SCREEN_WIDTH*(1/5), SCREEN_HEIGHT*(1/5)))
+
+    return bg1,bg2,bg3,board_image,x_image,x_image_red,o_image,o_image_blue
+
+def change_background(IMAGE_INDEX, background_list):
+    IMAGE_INDEX = IMAGE_INDEX%len(background_list)
+    new_bg = background_list[IMAGE_INDEX]
+    return new_bg, IMAGE_INDEX+1
+
+def quit_screen(running,screen):
+    quit_prompt = True
+    while quit_prompt:
+        screen.fill((0, 0, 0))
+        show_text(screen,"Are you sure you want to quit? (y/n)",(SCREEN_WIDTH/5, SCREEN_HEIGHT/2.5),40, WHITE)
+        pygame.display.update()
+        for sub_event in pygame.event.get():
+            if sub_event.type == pygame.KEYDOWN:
+                if sub_event.key == pygame.K_y:
+                    running = False
+                    quit_prompt = False
+                    pygame.quit()
+                    sys.exit()
+                if sub_event.key == pygame.K_n:
+                    quit_prompt = False
+    return running
 
 def check_winner(board, player):
     """Check if the specified player has won"""
@@ -56,7 +103,7 @@ class TicTacToeAI:
         if not possible_actions:
             return None
             
-        if random.random() < epsilon:
+        if random.random() < epsilon:   #choose a random possible action; if less than epsilon
             return random.choice(possible_actions)
         else:
             # Choose best action based on Q-values
@@ -79,12 +126,12 @@ class TicTacToeAI:
             old_q = self.q_table.get((state, action), 0)
             self.q_table[(state, action)] = old_q + self.alpha * (reward - old_q)
 
-    def save_q_table(self, filename='q_table.pkl'):
+    def save_q_table(self, filename='models/q_table.pkl'):
         """Save Q-table to file"""
         with open(filename, 'wb') as f:
             pickle.dump(self.q_table, f)
 
-    def load_q_table(self, filename='q_table.pkl'):
+    def load_q_table(self, filename='models/q_table.pkl'):
         """Load Q-table from file"""
         try:
             with open(filename, 'rb') as f:
@@ -136,8 +183,8 @@ def train_ai(screen, ai, num_games=10000):
         
         while True:
             state = tuple(board)
-            action = ai.choose_action(state)
-            if action is None:
+            action = ai.choose_action(state)    #ai makes a choice based on e-greedy method
+            if action is None:                  #there is no empty cell remaining i.e. draw
                 winner = 'draw'
                 break
                 
@@ -172,24 +219,99 @@ def train_ai(screen, ai, num_games=10000):
         
         ai.update_q_table(history, winner)
         
-def human_vs_ai(screen, ai):
+def human_vs_ai(screen, ai, clock):
     """Human vs AI game loop"""
     board = [' ']*9
     current_player = 'X'  # AI starts first
     game_over = False
     winner = None
     
-    while True:
+    #import backgrounds and images
+    bg1 = pygame.image.load("assets/images/background/bg1.jpg")
+    bg2 = pygame.image.load("assets/images/background/bg2.jpg")
+    bg3 = pygame.image.load("assets/images/background/bg3.jpg")
+
+    board_image = pygame.image.load("assets/images/board.png")
+    x_image = pygame.image.load("assets/images/x.png")
+    x_image_red = pygame.image.load("assets/images/x_red.png")
+    o_image = pygame.image.load("assets/images/o.png")
+    o_image_blue = pygame.image.load("assets/images/o_blue.png")
+    line = pygame.image.load("assets/images/line.png")
+    icon = pygame.image.load("assets/images/icon.png")
+
+    #Title and Icon
+    pygame.display.set_caption("Tic Tac Toe with Q-Learning")
+    pygame.display.set_icon(icon)
+
+    #Initialization Error
+    if not pygame.font:
+        print("Warning, fonts disabled")
+    if not pygame.mixer:
+        print("Warning, sound disabled")
+
+    #Sounds and Music
+    MUSIC_VOL_MAX = 0.1
+    SOUND_VOL_MAX = 1
+    mixer.music.load("assets/audio/music.mp3")
+    mixer.music.set_volume(MUSIC_VOL_MAX) # Set the volume in range (0.0 to 1.0)
+    mixer.music.play(-1)
+    place_sound = mixer.Sound("assets/audio/placing.mp3")
+    place_sound.set_volume(SOUND_VOL_MAX)
+    
+    bg1,bg2,bg3,board_image,x_image,x_image_red,o_image,o_image_blue = scale_items(
+    bg1,bg2,bg3,board_image,x_image,x_image_red,o_image,o_image_blue
+    )
+    background_list = [bg1, bg2, bg3]
+    background = bg1
+
+    #variables
+    DISPLAY_BG = False
+    IMAGE_INDEX = 0       #the bg_image index(to choose from various bg)
+
+    running = True
+    while running:
+        #background
+        screen.fill(delfault_bg)
+        if DISPLAY_BG:
+            screen.blit(background, (0,0))
+        #board
+        screen.blit(board_image, (BOARD_POS_X, BOARD_POS_Y))
+        # screen.blit(x_image, (ITEM_POS_X, ITEM_POS_Y))
+        # screen.blit(o_image_blue, (ITEM_POS_X+ITEM_INC_X, ITEM_POS_Y+ITEM_INC_Y))
+        # screen.blit(x_image_red, (ITEM_POS_X, ITEM_POS_Y+ITEM_INC_Y))
+
+        #handle pygame events
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 pygame.quit()
                 sys.exit()
+            #handle keyboard inputs
+            if event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_q:
+                    running = quit_screen(running,screen)  #call the quit_screen function
+                if event.key == pygame.K_b:
+                    DISPLAY_BG = not DISPLAY_BG
+                    background, IMAGE_INDEX = change_background(IMAGE_INDEX, background_list)
+                if event.key == pygame.K_m:
+                # change the volume mixer
+                    if mixer.music.get_volume() > 0:
+                        mixer.music.set_volume(0)
+                    elif place_sound.get_volume() > 0:
+                        place_sound.set_volume(0)
+                    else:
+                        mixer.music.set_volume(MUSIC_VOL_MAX)
+                        place_sound.set_volume(SOUND_VOL_MAX)
                 
             if event.type == pygame.MOUSEBUTTONDOWN and not game_over and current_player == 'O':
+                place_sound.play()
                 x, y = pygame.mouse.get_pos()
-                col = x // CELL_SIZE
-                row = y // CELL_SIZE
-                idx = row * 3 + col
+                if ((x>BOARD_POS_X and x<BOARD_POS_X+(SCREEN_WIDTH*13/15)) and (y>BOARD_POS_Y and y<BOARD_POS_Y+(SCREEN_HEIGHT*13/15))):
+                    x -= BOARD_POS_X
+                    y -= BOARD_POS_Y
+                    col = x // ((SCREEN_WIDTH*(13/45)))
+                    row = y // ((SCREEN_HEIGHT*(13/45)))
+
+                idx = int(row) * 3 + int(col)
                 
                 if board[idx] == ' ':
                     board[idx] = 'O'
@@ -220,26 +342,39 @@ def human_vs_ai(screen, ai):
                     current_player = 'O'
         
         # Draw board
-        draw_board(screen, board)
-        
+        for idx, cell in enumerate(board):
+            if cell == ' ':
+                continue
+                
+            row = idx // 3
+            col = idx % 3
+            
+            if cell == 'X':
+                screen.blit(x_image, (ITEM_POS_X + ITEM_INC_X * col , ITEM_POS_Y + ITEM_INC_Y * row))
+            else:
+                screen.blit(o_image, (ITEM_POS_X + ITEM_INC_X * col , ITEM_POS_Y + ITEM_INC_Y * row))
+
         # Show game status
         if game_over:
             if winner == 'draw':
                 text = "Draw!"
             else:
                 text = f"{winner} wins!"
-            show_text(screen, text, (WIDTH//2-100, HEIGHT//2-20), 74)
+            show_text(screen, text, (SCREEN_WIDTH/2.3, SCREEN_HEIGHT/30), int((1/13)*SCREEN_WIDTH))
             
         pygame.display.flip()
-        
+        clock.tick(120) # clock ticks for a constant time/clocks/frames
         if game_over:
             pygame.time.wait(3000)
             break
 
 def main():
+        
+    #initialize pygame
     pygame.init()
-    screen = pygame.display.set_mode((WIDTH, HEIGHT))
-    pygame.display.set_caption("Tic Tac Toe with Q-Learning")
+
+    #initialize the screen
+    screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))   #(width, height)
     clock = pygame.time.Clock()
     
     ai = TicTacToeAI(alpha=0.5, gamma=0.9, epsilon=0.1)
@@ -253,17 +388,18 @@ def main():
     
     # Main game loop
     while True:
-        human_vs_ai(screen, ai)
+        human_vs_ai(screen, ai,clock)
         
         # Ask to play again
         screen.fill(WHITE)
-        show_text(screen, "Play again? (Y/N)", (WIDTH//2-100, HEIGHT//2))
+        show_text(screen, "Play again? (Y/N)", (SCREEN_WIDTH//5, SCREEN_HEIGHT//2),int((1/10)*SCREEN_WIDTH))
         pygame.display.flip()
         
         waiting = True
         while waiting:
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
+                    waiting = False
                     pygame.quit()
                     sys.exit()
                 if event.type == pygame.KEYDOWN:
