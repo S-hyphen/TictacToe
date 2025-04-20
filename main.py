@@ -82,6 +82,17 @@ def check_winner(board, player):
         return True
     return False
 
+def check_winner_combo(board, player):
+    win_combinations = [
+        (0, 1, 2), (3, 4, 5), (6, 7, 8),  # Rows
+        (0, 3, 6), (1, 4, 7), (2, 5, 8),  # Columns
+        (0, 4, 8), (2, 4, 6)              # Diagonals
+    ]
+    for combo in win_combinations:
+        if all(board[i] == player for i in combo):
+            return combo  # Return the winning indices
+    return None
+
 def is_board_full(board):
     """Check if the board is completely filled"""
     return ' ' not in board
@@ -229,11 +240,15 @@ def human_vs_ai(screen, ai, clock, audio_files, image_files, backgrounds, DISPLA
 
     x_image = image_files[1]
     o_image = image_files[3]
+    x_image_red = image_files[2]  # Red X for winning combination
+    o_image_blue = image_files[4]  # Blue O for winning combination
+
 
     board = [' ']*9
     current_player = 'X'  # AI starts first
     game_over = False
     winner = None
+    winning_line = None
 
     running = True
     while running:
@@ -283,7 +298,8 @@ def human_vs_ai(screen, ai, clock, audio_files, image_files, backgrounds, DISPLA
                 if board[idx] == ' ':
                     board[idx] = 'O'
                     
-                    if check_winner(board, 'O'):
+                    winning_line = check_winner_combo(board, 'O')
+                    if winning_line:
                         winner = 'O'
                         game_over = True
                     elif is_board_full(board):
@@ -299,7 +315,8 @@ def human_vs_ai(screen, ai, clock, audio_files, image_files, backgrounds, DISPLA
             if action is not None:
                 board[action] = 'X'
                 
-                if check_winner(board, 'X'):
+                winning_line = check_winner_combo(board, 'X')
+                if winning_line:
                     winner = 'X'
                     game_over = True
                 elif is_board_full(board):
@@ -316,10 +333,19 @@ def human_vs_ai(screen, ai, clock, audio_files, image_files, backgrounds, DISPLA
             row = idx // 3
             col = idx % 3
             
-            if cell == 'X':
-                screen.blit(x_image, (ITEM_POS_X + ITEM_INC_X * col , ITEM_POS_Y + ITEM_INC_Y * row))
-            else:
-                screen.blit(o_image, (ITEM_POS_X + ITEM_INC_X * col , ITEM_POS_Y + ITEM_INC_Y * row))
+            x = ITEM_POS_X + ITEM_INC_X * col
+            y = ITEM_POS_Y + ITEM_INC_Y * row
+
+            if game_over and winning_line and idx in winning_line:  #draw highlighted symbols
+                if cell == 'X':
+                    screen.blit(x_image_red, (x, y))
+                else:
+                    screen.blit(o_image_blue, (x, y))
+            else: #regular X and O
+                if cell == 'X':
+                    screen.blit(x_image, (x, y))
+                else:
+                    screen.blit(o_image, (x, y))
 
         # Show game status
         if game_over:
