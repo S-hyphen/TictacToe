@@ -353,12 +353,24 @@ def human_vs_ai(screen, ai, clock, audio_files, image_files, backgrounds, DISPLA
                 text = "Draw!"
             else:
                 text = f"{winner} wins!"
-            show_text(screen, text, (SCREEN_WIDTH/2.3, SCREEN_HEIGHT/30), int((1/13)*SCREEN_WIDTH))
+            show_text(screen, text, (SCREEN_WIDTH/2.3, SCREEN_HEIGHT/40), int((1/13)*SCREEN_WIDTH),RED)
             
         pygame.display.flip()
         clock.tick(120) # clock ticks for a constant time/clocks/frames
         if game_over:
-            pygame.time.wait(3000)
+            pygame.time.wait(2000)
+            #wait for key press
+            waiting_for_key = True
+            while waiting_for_key:
+                for event in pygame.event.get():
+                    if event.type == pygame.QUIT:
+                        pygame.quit()
+                        sys.exit()
+                    if event.type == pygame.KEYDOWN:
+                        waiting_for_key = False
+                    if event.type == pygame.MOUSEBUTTONDOWN:
+                        waiting_for_key = False
+
             screen.fill(delfault_bg)
             if DISPLAY_BG:
                 background = backgrounds[IMAGE_INDEX[0]]
