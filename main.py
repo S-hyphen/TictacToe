@@ -15,6 +15,9 @@ ITEM_INC_X = (3/10)*SCREEN_WIDTH    #the relative difference between items
 ITEM_INC_Y = (3/10)*SCREEN_HEIGHT
 delfault_bg = (255, 255, 255)  # default background color
 
+MUSIC_VOL_MAX = 0.1
+SOUND_VOL_MAX = 1
+
 WIDTH, HEIGHT = 600, 600
 CELL_SIZE = WIDTH // 3
 LINE_WIDTH = 15
@@ -40,10 +43,10 @@ def scale_items(bg1,bg2,bg3,board_image,x_image,x_image_red,o_image,o_image_blue
 
     return bg1,bg2,bg3,board_image,x_image,x_image_red,o_image,o_image_blue
 
-def change_background(IMAGE_INDEX, background_list):
-    IMAGE_INDEX = IMAGE_INDEX%len(background_list)
-    new_bg = background_list[IMAGE_INDEX]
-    return new_bg, IMAGE_INDEX+1
+def change_background(image_index, background_list):
+    new_bg = background_list[image_index]
+    image_index = (image_index+2)%(len(background_list))
+    return new_bg, image_index
 
 def quit_screen(running,screen):
     quit_prompt = True
@@ -78,6 +81,17 @@ def check_winner(board, player):
     if board[2] == board[4] == board[6] == player:
         return True
     return False
+
+def check_winner_combo(board, player):
+    win_combinations = [
+        (0, 1, 2), (3, 4, 5), (6, 7, 8),  # Rows
+        (0, 3, 6), (1, 4, 7), (2, 5, 8),  # Columns
+        (0, 4, 8), (2, 4, 6)              # Diagonals
+    ]
+    for combo in win_combinations:
+        if all(board[i] == player for i in combo):
+            return combo  # Return the winning indices
+    return None
 
 def is_board_full(board):
     """Check if the board is completely filled"""
@@ -219,66 +233,32 @@ def train_ai(screen, ai, num_games=10000):
         
         ai.update_q_table(history, winner)
         
-def human_vs_ai(screen, ai, clock):
+def human_vs_ai(screen, ai, clock, audio_files, image_files, backgrounds, DISPLAY_BG, IMAGE_INDEX):
     """Human vs AI game loop"""
+    # background_list = [bg1, bg2, bg3, DISPLAY_BG, IMAGE_INDEX]
+    place_sound = audio_files[0]
+
+    x_image = image_files[1]
+    o_image = image_files[3]
+    x_image_red = image_files[2]  # Red X for winning combination
+    o_image_blue = image_files[4]  # Blue O for winning combination
+
+
     board = [' ']*9
     current_player = 'X'  # AI starts first
     game_over = False
     winner = None
-    
-    #import backgrounds and images
-    bg1 = pygame.image.load("assets/images/background/bg1.jpg")
-    bg2 = pygame.image.load("assets/images/background/bg2.jpg")
-    bg3 = pygame.image.load("assets/images/background/bg3.jpg")
-
-    board_image = pygame.image.load("assets/images/board.png")
-    x_image = pygame.image.load("assets/images/x.png")
-    x_image_red = pygame.image.load("assets/images/x_red.png")
-    o_image = pygame.image.load("assets/images/o.png")
-    o_image_blue = pygame.image.load("assets/images/o_blue.png")
-    line = pygame.image.load("assets/images/line.png")
-    icon = pygame.image.load("assets/images/icon.png")
-
-    #Title and Icon
-    pygame.display.set_caption("Tic Tac Toe with Q-Learning")
-    pygame.display.set_icon(icon)
-
-    #Initialization Error
-    if not pygame.font:
-        print("Warning, fonts disabled")
-    if not pygame.mixer:
-        print("Warning, sound disabled")
-
-    #Sounds and Music
-    MUSIC_VOL_MAX = 0.1
-    SOUND_VOL_MAX = 1
-    mixer.music.load("assets/audio/music.mp3")
-    mixer.music.set_volume(MUSIC_VOL_MAX) # Set the volume in range (0.0 to 1.0)
-    mixer.music.play(-1)
-    place_sound = mixer.Sound("assets/audio/placing.mp3")
-    place_sound.set_volume(SOUND_VOL_MAX)
-    
-    bg1,bg2,bg3,board_image,x_image,x_image_red,o_image,o_image_blue = scale_items(
-    bg1,bg2,bg3,board_image,x_image,x_image_red,o_image,o_image_blue
-    )
-    background_list = [bg1, bg2, bg3]
-    background = bg1
-
-    #variables
-    DISPLAY_BG = False
-    IMAGE_INDEX = 0       #the bg_image index(to choose from various bg)
+    winning_line = None
 
     running = True
     while running:
         #background
         screen.fill(delfault_bg)
         if DISPLAY_BG:
+            background = backgrounds[IMAGE_INDEX[0]]
             screen.blit(background, (0,0))
         #board
-        screen.blit(board_image, (BOARD_POS_X, BOARD_POS_Y))
-        # screen.blit(x_image, (ITEM_POS_X, ITEM_POS_Y))
-        # screen.blit(o_image_blue, (ITEM_POS_X+ITEM_INC_X, ITEM_POS_Y+ITEM_INC_Y))
-        # screen.blit(x_image_red, (ITEM_POS_X, ITEM_POS_Y+ITEM_INC_Y))
+        screen.blit(image_files[0], (BOARD_POS_X, BOARD_POS_Y))
 
         #handle pygame events
         for event in pygame.event.get():
@@ -289,9 +269,11 @@ def human_vs_ai(screen, ai, clock):
             if event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_q:
                     running = quit_screen(running,screen)  #call the quit_screen function
+                
                 if event.key == pygame.K_b:
                     DISPLAY_BG = not DISPLAY_BG
-                    background, IMAGE_INDEX = change_background(IMAGE_INDEX, background_list)
+                    background, IMAGE_INDEX[0] = change_background(IMAGE_INDEX[0], backgrounds)
+
                 if event.key == pygame.K_m:
                 # change the volume mixer
                     if mixer.music.get_volume() > 0:
@@ -316,7 +298,8 @@ def human_vs_ai(screen, ai, clock):
                 if board[idx] == ' ':
                     board[idx] = 'O'
                     
-                    if check_winner(board, 'O'):
+                    winning_line = check_winner_combo(board, 'O')
+                    if winning_line:
                         winner = 'O'
                         game_over = True
                     elif is_board_full(board):
@@ -332,7 +315,8 @@ def human_vs_ai(screen, ai, clock):
             if action is not None:
                 board[action] = 'X'
                 
-                if check_winner(board, 'X'):
+                winning_line = check_winner_combo(board, 'X')
+                if winning_line:
                     winner = 'X'
                     game_over = True
                 elif is_board_full(board):
@@ -349,10 +333,19 @@ def human_vs_ai(screen, ai, clock):
             row = idx // 3
             col = idx % 3
             
-            if cell == 'X':
-                screen.blit(x_image, (ITEM_POS_X + ITEM_INC_X * col , ITEM_POS_Y + ITEM_INC_Y * row))
-            else:
-                screen.blit(o_image, (ITEM_POS_X + ITEM_INC_X * col , ITEM_POS_Y + ITEM_INC_Y * row))
+            x = ITEM_POS_X + ITEM_INC_X * col
+            y = ITEM_POS_Y + ITEM_INC_Y * row
+
+            if game_over and winning_line and idx in winning_line:  #draw highlighted symbols
+                if cell == 'X':
+                    screen.blit(x_image_red, (x, y))
+                else:
+                    screen.blit(o_image_blue, (x, y))
+            else: #regular X and O
+                if cell == 'X':
+                    screen.blit(x_image, (x, y))
+                else:
+                    screen.blit(o_image, (x, y))
 
         # Show game status
         if game_over:
@@ -360,13 +353,30 @@ def human_vs_ai(screen, ai, clock):
                 text = "Draw!"
             else:
                 text = f"{winner} wins!"
-            show_text(screen, text, (SCREEN_WIDTH/2.3, SCREEN_HEIGHT/30), int((1/13)*SCREEN_WIDTH))
+            show_text(screen, text, (SCREEN_WIDTH/2.3, SCREEN_HEIGHT/40), int((1/13)*SCREEN_WIDTH),RED)
             
         pygame.display.flip()
         clock.tick(120) # clock ticks for a constant time/clocks/frames
         if game_over:
-            pygame.time.wait(3000)
-            break
+            pygame.time.wait(2000)
+            #wait for key press
+            waiting_for_key = True
+            while waiting_for_key:
+                for event in pygame.event.get():
+                    if event.type == pygame.QUIT:
+                        pygame.quit()
+                        sys.exit()
+                    if event.type == pygame.KEYDOWN:
+                        waiting_for_key = False
+                    if event.type == pygame.MOUSEBUTTONDOWN:
+                        waiting_for_key = False
+
+            screen.fill(delfault_bg)
+            if DISPLAY_BG:
+                background = backgrounds[IMAGE_INDEX[0]]
+                screen.blit(background, (0,0))
+            return DISPLAY_BG, IMAGE_INDEX[0]  # return updated values
+
 
 def main():
         
@@ -386,12 +396,54 @@ def main():
         ai.save_q_table()
         print("Training complete!")
     
+    #HUMAN VS AI
+    #import backgrounds and images
+    bg1 = pygame.image.load("assets/images/background/bg1.jpg")
+    bg2 = pygame.image.load("assets/images/background/bg2.jpg")
+    bg3 = pygame.image.load("assets/images/background/bg3.jpg")
+
+    board_image = pygame.image.load("assets/images/board.png")
+    x_image = pygame.image.load("assets/images/x.png")
+    x_image_red = pygame.image.load("assets/images/x_red.png")
+    o_image = pygame.image.load("assets/images/o.png")
+    o_image_blue = pygame.image.load("assets/images/o_blue.png")
+    line_vert = pygame.image.load("assets/images/line.png")
+    icon = pygame.image.load("assets/images/icon.png")
+
+    #Title and Icon
+    pygame.display.set_caption("Tic Tac Toe with Q-Learning")
+    pygame.display.set_icon(icon)
+
+    #Initialization Error
+    if not pygame.font:
+        print("Warning, fonts disabled")
+    if not pygame.mixer:
+        print("Warning, sound disabled")
+
+    #Sounds and Music
+    mixer.music.load("assets/audio/music.mp3")
+    mixer.music.set_volume(MUSIC_VOL_MAX) # Set the volume in range (0.0 to 1.0)
+    mixer.music.play(-1)
+    place_sound = mixer.Sound("assets/audio/placing.mp3")
+    place_sound.set_volume(SOUND_VOL_MAX)
+    
+    bg1,bg2,bg3,board_image,x_image,x_image_red,o_image,o_image_blue = scale_items(
+    bg1,bg2,bg3,board_image,x_image,x_image_red,o_image,o_image_blue
+    )
+
+    #variables
+    backgrounds = [bg1, bg2, bg3]
+    DISPLAY_BG = False
+    IMAGE_INDEX = [0]       #the bg_image index(to choose from various bg)
+   
+    image_files = (board_image, x_image, x_image_red, o_image, o_image_blue, line_vert)
+    audio_files = [place_sound]
+
     # Main game loop
     while True:
-        human_vs_ai(screen, ai,clock)
+        DISPLAY_BG, IMAGE_INDEX[0] = human_vs_ai(screen, ai,clock, audio_files, image_files, backgrounds, DISPLAY_BG, IMAGE_INDEX)
         
         # Ask to play again
-        screen.fill(WHITE)
         show_text(screen, "Play again? (Y/N)", (SCREEN_WIDTH//5, SCREEN_HEIGHT//2),int((1/10)*SCREEN_WIDTH))
         pygame.display.flip()
         
